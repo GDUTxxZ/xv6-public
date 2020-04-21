@@ -35,7 +35,7 @@ mpsearch1(uint a, int len)
   addr = P2V(a);
   e = addr+len;
   for(p = addr; p < e; p += sizeof(struct mp))
-    if(memcmp(p, "_MP_", 4) == 0 && sum(p, sizeof(struct mp)) == 0)
+    if(memcmp(p, "_MP_", 4) == 0 && sum(p, sizeof(struct mp)) == 0) // 匹配对应的mp结构体
       return (struct mp*)p;
   return 0;
 }
@@ -52,7 +52,7 @@ mpsearch(void)
   uint p;
   struct mp *mp;
 
-  bda = (uchar *) P2V(0x400);
+  bda = (uchar *) P2V(0x400); // bios data area
   if((p = ((bda[0x0F]<<8)| bda[0x0E]) << 4)){
     if((mp = mpsearch1(p, 1024)))
       return mp;
@@ -99,27 +99,30 @@ mpinit(void)
   struct mpioapic *ioapic;
 
   if((conf = mpconfig(&mp)) == 0)
-    panic("Expect to run on an SMP");
+    panic("Expect to run on an SMP"); // 对称多处理（Symmetric Multiprocessing，SMP），每个处理器都参与完成操作系统的所有任务。每个处理器都有自己的缓存，但是共享物理内存
   ismp = 1;
   lapic = (uint*)conf->lapicaddr;
+
+  // MP浮点结构中包含指向MP配置表头的物理地址的指针， MP配置表由MP配置表头（基本部分）和扩展部分组成，基本部分就是MP配置基表即MP配置表头，扩展部分紧跟表头后面
+  // 此循环遍历配置表来获取 cpu和ioapic的结构
   for(p=(uchar*)(conf+1), e=(uchar*)conf+conf->length; p<e; ){
     switch(*p){
-    case MPPROC:
-      proc = (struct mpproc*)p;
+    case MPPROC: //入口类型为处理器
+      proc = (struct mpproc*)p; 
       if(ncpu < NCPU) {
         cpus[ncpu].apicid = proc->apicid;  // apicid may differ from ncpu
         ncpu++;
       }
       p += sizeof(struct mpproc);
       continue;
-    case MPIOAPIC:
+    case MPIOAPIC: //入口类型为I/O APIC
       ioapic = (struct mpioapic*)p;
       ioapicid = ioapic->apicno;
       p += sizeof(struct mpioapic);
       continue;
-    case MPBUS:
-    case MPIOINTR:
-    case MPLINTR:
+    case MPBUS: //入口类型为总线
+    case MPIOINTR:  //入口类型为I/O 中断分配
+    case MPLINTR: //入口类型为逻辑中断分配 
       p += 8;
       continue;
     default:

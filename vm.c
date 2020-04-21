@@ -8,7 +8,7 @@
 #include "elf.h"
 
 extern char data[];  // defined by kernel.ld
-pde_t *kpgdir;  // for use in scheduler()
+pde_t *kpgdir;  // for use in scheduler()，当前正在运行的程序的页
 
 // Set up CPU's kernel segment descriptors.
 // Run once on entry on each CPU.
@@ -32,6 +32,10 @@ seginit(void)
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
+// walkpgdir模仿 x86 的分页硬件为一个虚拟地址寻找 PTE 的过程。
+// walkpgdir 通过虚拟地址的前 10 位来找到在页目录中的对应条目，如果该条目不存在，说明要找的页表页尚未分配；
+// 如果 alloc 参数被设置了，walkpgdir 会分配页表页并将其物理地址放到页目录中。
+// 最后用虚拟地址的接下来 10 位来找到其在页表中的 PTE 地址。
 static pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
@@ -57,6 +61,10 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned.
+// mappages 做的工作是在页表中建立一段虚拟内存到一段物理内存的映射。
+// 它是在页的级别，即一页一页地建立映射的。
+// 对于每一个待映射虚拟地址，mappages 调用 walkpgdir 来找到该地址对应的 PTE 地址。
+// 然后初始化该 PTE 以保存对应物理页号、许可级别（PTE_W 和/或 PTE_U）以及 PTE_P 位来标记该 PTE 是否是有效的。
 static int
 mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
 {
@@ -108,24 +116,31 @@ static struct kmap {
   uint phys_end;
   int perm;
 } kmap[] = {
- { (void*)KERNBASE, 0,             EXTMEM,    PTE_W}, // I/O space
+ { (void*)KERNBASE, V2P(KERNBASE), EXTMEM,    PTE_W}, // I/O space
  { (void*)KERNLINK, V2P(KERNLINK), V2P(data), 0},     // kern text+rodata
  { (void*)data,     V2P(data),     PHYSTOP,   PTE_W}, // kern data+memory
  { (void*)DEVSPACE, DEVSPACE,      0,         PTE_W}, // more devices
 };
 
 // Set up kernel part of a page table.
+// 首先，它会分配一页内存来放置页目录，然后调用 mappages 来建立内核需要的映射，这些映射可以在 kmap 数组中找到。
+// 这里的映射包括内核的指令和数据，PHYSTOP 以下的物理内存，以及 I/O 设备所占的内存。
+// setupkvm 不会建立任何用户内存的映射，这些映射稍后会建立。
 pde_t*
 setupkvm(void)
 {
   pde_t *pgdir;
   struct kmap *k;
 
+  // 分配一页内存
   if((pgdir = (pde_t*)kalloc()) == 0)
     return 0;
   memset(pgdir, 0, PGSIZE);
+
   if (P2V(PHYSTOP) > (void*)DEVSPACE)
     panic("PHYSTOP too high");
+
+  //建立内核需要的映射，这些映射可以在 kmap 数组中找到
   for(k = kmap; k < &kmap[NELEM(kmap)]; k++)
     if(mappages(pgdir, k->virt, k->phys_end - k->phys_start,
                 (uint)k->phys_start, k->perm) < 0) {
@@ -137,6 +152,7 @@ setupkvm(void)
 
 // Allocate one page table for the machine for the kernel address
 // space for scheduler processes.
+// 创建并切换到一个拥有内核运行所需的 KERNBASE 以上映射的页表。
 void
 kvmalloc(void)
 {
@@ -153,6 +169,7 @@ switchkvm(void)
 }
 
 // Switch TSS and h/w page table to correspond to process p.
+// 通知硬件开始使用目标进程的页表
 void
 switchuvm(struct proc *p)
 {
@@ -164,6 +181,7 @@ switchuvm(struct proc *p)
     panic("switchuvm: no pgdir");
 
   pushcli();
+  // SEG_TSS 任务状态段
   mycpu()->gdt[SEG_TSS] = SEG16(STS_T32A, &mycpu()->ts,
                                 sizeof(mycpu()->ts)-1, 0);
   mycpu()->gdt[SEG_TSS].s = 0;
@@ -173,7 +191,7 @@ switchuvm(struct proc *p)
   // forbids I/O instructions (e.g., inb and outb) from user space
   mycpu()->ts.iomb = (ushort) 0xFFFF;
   ltr(SEG_TSS << 3);
-  lcr3(V2P(p->pgdir));  // switch to process's address space
+  lcr3(V2P(p->pgdir));  // switch to process's address space 硬件切换到用户进程的内存页表
   popcli();
 }
 
@@ -203,14 +221,14 @@ loaduvm(pde_t *pgdir, char *addr, struct inode *ip, uint offset, uint sz)
   if((uint) addr % PGSIZE != 0)
     panic("loaduvm: addr must be page aligned");
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walkpgdir(pgdir, addr+i, 0)) == 0)
+    if((pte = walkpgdir(pgdir, addr+i, 0)) == 0) // 翻译出对应的物理地址
       panic("loaduvm: address should exist");
     pa = PTE_ADDR(*pte);
     if(sz - i < PGSIZE)
       n = sz - i;
     else
       n = PGSIZE;
-    if(readi(ip, P2V(pa), offset+i, n) != n)
+    if(readi(ip, P2V(pa), offset+i, n) != n) // 读出文件内容
       return -1;
   }
   return 0;
@@ -299,6 +317,7 @@ freevm(pde_t *pgdir)
 
 // Clear PTE_U on a page. Used to create an inaccessible
 // page beneath the user stack.
+// 通过删除用户标志，来让这个页在用户模式下不可访问
 void
 clearpteu(pde_t *pgdir, char *uva)
 {

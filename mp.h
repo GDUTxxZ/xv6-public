@@ -1,9 +1,9 @@
 // See MultiProcessor Specification Version 1.[14]
 
 struct mp {             // floating pointer
-  uchar signature[4];           // "_MP_"
-  void *physaddr;               // phys addr of MP config table
-  uchar length;                 // 1
+  uchar signature[4];           // 标志，为"_MP_"时表示此为MP浮点结构
+  void *physaddr;               // phys addr of MP config table mp配置表头
+  uchar length;                 // 1， mp浮点结构的长度
   uchar specrev;                // [14]
   uchar checksum;               // all bytes must add up to 0
   uchar type;                   // MP system config type
@@ -13,13 +13,13 @@ struct mp {             // floating pointer
 
 struct mpconf {         // configuration table header
   uchar signature[4];           // "PCMP"
-  ushort length;                // total table length
+  ushort length;                // total table length MP配置表的长度
   uchar version;                // [14]
   uchar checksum;               // all bytes must add up to 0
   uchar product[20];            // product id
   uint *oemtable;               // OEM table pointer
   ushort oemlength;             // OEM table length
-  ushort entry;                 // entry count
+  ushort entry;                 // entry count 入口数
   uint *lapicaddr;              // address of local APIC
   ushort xlength;               // extended table length
   uchar xchecksum;              // extended table checksum

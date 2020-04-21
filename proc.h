@@ -36,18 +36,18 @@ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
 struct proc {
-  uint sz;                     // Size of process memory (bytes)
-  pde_t* pgdir;                // Page table
-  char *kstack;                // Bottom of kernel stack for this process
-  enum procstate state;        // Process state
-  int pid;                     // Process ID
-  struct proc *parent;         // Parent process
-  struct trapframe *tf;        // Trap frame for current syscall
-  struct context *context;     // swtch() here to run process
+  uint sz;                     // Size of process memory (bytes) 进程内存大小
+  pde_t* pgdir;                // Page table 内存目录
+  char *kstack;                // Bottom of kernel stack for this process 内核栈指针
+  enum procstate state;        // Process state 进程运行状态
+  int pid;                     // Process ID pid
+  struct proc *parent;         // Parent process 父进程
+  struct trapframe *tf;        // Trap frame for current syscall 陷入帧
+  struct context *context;     // swtch() here to run process 进程运行上下文，保存各种寄存器
   void *chan;                  // If non-zero, sleeping on chan
-  int killed;                  // If non-zero, have been killed
+  int killed;                  // If non-zero, have been killed 结束标识位
   struct file *ofile[NOFILE];  // Open files
-  struct inode *cwd;           // Current directory
+  struct inode *cwd;           // Current directory 当前目录
   char name[16];               // Process name (debugging)
 };
 

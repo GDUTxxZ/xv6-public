@@ -44,6 +44,7 @@ binit(void)
 
 //PAGEBREAK!
   // Create linked list of buffers
+  // 将bcache.head初始化为一个双向链表，一共有NBUF个元素
   bcache.head.prev = &bcache.head;
   bcache.head.next = &bcache.head;
   for(b = bcache.buf; b < bcache.buf+NBUF; b++){

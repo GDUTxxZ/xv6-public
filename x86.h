@@ -1,5 +1,25 @@
 // Routines to let C code use special x86 instructions.
 
+/**
+ * 内联汇编规则
+ * asm [volatile] (AssemblerTemplate
+ *    : [OutputOperands] // 格式如 [asmSymbolicName1] constraint (cvariablename1), [asmSymbolicName1] constraint (cvariablename1)···
+ *    : [Inputoperands]
+ *    : [Clobbers] // 修饰寄存器列表，表示那些寄存器正在以不可预测的方式读写， memory表示不可以缓存保存与寄存器的内存值
+ * )
+ * 
+ * volatile 表示，编译器不要对这一段汇编进行优化，原样输出就好
+ * AssemblerTemplate 是汇编模版，他是一个包含汇编指令的模版，可以通过使用占位符来替换
+ * asmSymbolicName 是asm符号别名，而cvariablename是c语言变量别名 汇编通过 %[别名] 来访问这些变量，另外每一个数都会有编号， 通过 %[数字]访问
+ * constraint 是寄存器操作数约束
+ *    a %eax %ax %al
+ *    b %ebx %eb %el
+ *    c %ecx %cx %cl
+ *    d	%edx %dx %dl
+ *    S	%esi %si
+ *    D	%edi %di
+*/
+
 static inline uchar
 inb(ushort port)
 {
@@ -9,6 +29,13 @@ inb(ushort port)
   return data;
 }
 
+/**
+ * 把DF寄存器清零。
+ * 把循环次数写进cx计数寄存器中。
+ * 循环执行insl指令，把IO接口0x1F0的数据读取并写到对应的内存区域上，每次读取4个字节。
+ * 每次循环会让cx计数寄存器的值减1，并更新DI寄存器的值，让它加4。
+ * 这样，在循环结束时候，刚好读取完1个扇区的所有数据。
+ * /
 static inline void
 insl(int port, void *addr, int cnt)
 {
@@ -42,9 +69,9 @@ outsl(int port, const void *addr, int cnt)
 static inline void
 stosb(void *addr, int data, int cnt)
 {
-  asm volatile("cld; rep stosb" :
-               "=D" (addr), "=c" (cnt) :
-               "0" (addr), "1" (cnt), "a" (data) :
+  asm volatile("cld; rep stosb" : // rep stosb就是从EDI所指的内存开始，将连续的ECX个字节写成AL的内容
+               "=D" (addr), "=c" (cnt) : // D	%edi  c %ecx 
+               "0" (addr), "1" (cnt), "a" (data) : // a %eax
                "memory", "cc");
 }
 

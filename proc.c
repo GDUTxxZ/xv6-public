@@ -8,8 +8,8 @@
 #include "spinlock.h"
 
 struct {
-  struct spinlock lock;
-  struct proc proc[NPROC];
+  struct spinlock lock; // 锁
+  struct proc proc[NPROC]; // 进程列表
 } ptable;
 
 static struct proc *initproc;
@@ -70,6 +70,10 @@ myproc(void) {
 // If found, change state to EMBRYO and initialize
 // state required to run in the kernel.
 // Otherwise return 0.
+// allocproc 的工作是在页表中分配一个槽（即结构体 struct proc），并初始化进程的状态，为其内核线程的运行做准备。
+// allocproc 会在 proc 的表中找到一个标记为 UNUSED 的槽位。
+// 当它找到这样一个未被使用的槽位后，allocproc 将其状态设置为 EMBRYO，使其被标记为被使用的并给这个进程一个独有的 pid 。
+// 接下来，它尝试为进程的内核线程分配内核栈。如果分配失败了，allocproc 会把这个槽位的状态恢复为 UNUSED 并返回0以标记失败。
 static struct proc*
 allocproc(void)
 {
@@ -92,6 +96,7 @@ found:
   release(&ptable.lock);
 
   // Allocate kernel stack.
+  // 分配内核栈
   if((p->kstack = kalloc()) == 0){
     p->state = UNUSED;
     return 0;
@@ -99,6 +104,7 @@ found:
   sp = p->kstack + KSTACKSIZE;
 
   // Leave room for trap frame.
+  // 给陷入帧留出空间
   sp -= sizeof *p->tf;
   p->tf = (struct trapframe*)sp;
 
@@ -110,7 +116,7 @@ found:
   sp -= sizeof *p->context;
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
-  p->context->eip = (uint)forkret;
+  p->context->eip = (uint)forkret; // eip寄存器是cpu的下一条执行指令的地址，allocproc 通过设置返回eip的值，使得新进程的内核线程首先运行在 forkret 的代码中，然后返回到 trapret
 
   return p;
 }
@@ -123,13 +129,20 @@ userinit(void)
   struct proc *p;
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
-  p = allocproc();
+  p = allocproc(); // 初始化第一个进程的内核
   
   initproc = p;
-  if((p->pgdir = setupkvm()) == 0)
+  if((p->pgdir = setupkvm()) == 0) // 为第一个进程分配内存空间
     panic("userinit: out of memory?");
-  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
+  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size); // 初始化第一个进程的init的用户代码
   p->sz = PGSIZE;
+
+  //userinit 把 trap frame（0602）设置为初始的用户模式状态：
+  // %cs 寄存器保存着一个段选择器， 指向段 SEG_UCODE 并处于特权级 DPL_USER（即在用户模式而非内核模式）。
+  // 类似的，%ds, %es, %ss 的段选择器指向段 SEG_UDATA 并处于特权级 DPL_USER。
+  // %eflags 的 FL_IF 位被设置为允许硬件中断；
+  // 栈指针 %esp 被设为了进程的最大有效虚拟内存，即 p->sz。
+  // 指令指针则指向初始化代码的入口点，即地址0。
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -331,6 +344,7 @@ scheduler(void)
     sti();
 
     // Loop over process table looking for process to run.
+    // 找到那可以跑的线程
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
@@ -340,10 +354,12 @@ scheduler(void)
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
       c->proc = p;
-      switchuvm(p);
+      switchuvm(p); // 通知硬件开始使用目标进程的页表
       p->state = RUNNING;
 
+      // 保存当前的寄存器，并把目标内核线程中保存的寄存器（proc->context）载入到 x86 的硬件寄存器中，其中也包括栈指针和指令指针。
       swtch(&(c->scheduler), p->context);
+      // 切换到内核
       switchkvm();
 
       // Process is done running for now.

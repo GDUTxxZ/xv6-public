@@ -51,6 +51,7 @@ lapicw(int index, int value)
   lapic[ID];  // wait for write to finish, by reading
 }
 
+// 初始化local apici
 void
 lapicinit(void)
 {

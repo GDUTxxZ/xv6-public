@@ -28,15 +28,16 @@ acquire(struct spinlock *lk)
   if(holding(lk))
     panic("acquire");
 
-  // The xchg is atomic.
+  // The xchg is atomic. xchg是原子的，作用是交换内存和寄存器中的一个字，防止代码编译出来的多行指令执行导致进程不安全
   while(xchg(&lk->locked, 1) != 0)
     ;
 
   // Tell the C compiler and the processor to not move loads or stores
   // past this point, to ensure that the critical section's memory
   // references happen after the lock is acquired.
+  // 防止C编译器把后面的代码优化到前面去，保证获取mycpu引用的时候已经对应cpu已经获得了对应的锁
   __sync_synchronize();
-
+  
   // Record info about lock acquisition for debugging.
   lk->cpu = mycpu();
   getcallerpcs(&lk, lk->pcs);
@@ -100,7 +101,7 @@ holding(struct spinlock *lock)
 // Pushcli/popcli are like cli/sti except that they are matched:
 // it takes two popcli to undo two pushcli.  Also, if interrupts
 // are off, then pushcli, popcli leaves them off.
-
+// 进行了计数，防止两个pushcli只需要一个popcli就可以抵消
 void
 pushcli(void)
 {

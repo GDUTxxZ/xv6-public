@@ -17,11 +17,11 @@ exec(char *path, char **argv)
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
-  struct proc *curproc = myproc();
+  struct proc *curproc = myproc(); // 指针保存在当前的cpu中
 
-  begin_op();
+  begin_op(); // log初始化
 
-  if((ip = namei(path)) == 0){
+  if((ip = namei(path)) == 0){ // 通过namei读取文件
     end_op();
     cprintf("exec: fail\n");
     return -1;
@@ -35,10 +35,11 @@ exec(char *path, char **argv)
   if(elf.magic != ELF_MAGIC)
     goto bad;
 
-  if((pgdir = setupkvm()) == 0)
+  if((pgdir = setupkvm()) == 0) // 新建一个内存页
     goto bad;
 
   // Load program into memory.
+  // 将文件中的程序加载进内存中,每个程序一个页
   sz = 0;
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, (char*)&ph, off, sizeof(ph)) != sizeof(ph))
@@ -62,6 +63,7 @@ exec(char *path, char **argv)
 
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
+  // 分配两个页，一个是不可访问的页，另一个是用户用的页，当使用内存超过时候触达这个用户不可用的页就会报错
   sz = PGROUNDUP(sz);
   if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
     goto bad;

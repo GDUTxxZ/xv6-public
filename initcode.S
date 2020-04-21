@@ -4,7 +4,7 @@
 #include "syscall.h"
 #include "traps.h"
 
-
+# T_SYSCALL 见 syscall.c 函数syscall
 # exec(init, argv)
 .globl start
 start:

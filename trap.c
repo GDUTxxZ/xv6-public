@@ -14,6 +14,9 @@ extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
 
+// 它设置了 idt 表中的 256 个表项。
+// 中断 i 被位于 vectors[i] 的代码处理。
+// 每一个中断处理程序的入口点都是不同的，因为 x86 并未把中断号传递给中断处理程序，使用 256 个不同的处理程序是区分这 256 种情况的唯一办法。
 void
 tvinit(void)
 {
@@ -21,6 +24,8 @@ tvinit(void)
 
   for(i = 0; i < 256; i++)
     SETGATE(idt[i], 0, SEG_KCODE<<3, vectors[i], 0);
+
+  // T_SYSCALL是系统调用的中断号，专门用来处理用户进程发起的中断。它通过传递第二个参数值为 1 来指定这是一个陷阱门。陷阱门不会清除 FL 位，这使得在处理系统调用的时候也接受其他中断。
   SETGATE(idt[T_SYSCALL], 1, SEG_KCODE<<3, vectors[T_SYSCALL], DPL_USER);
 
   initlock(&tickslock, "time");
